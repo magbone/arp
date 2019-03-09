@@ -19,6 +19,13 @@
             des[i] = src[i];\
       }while(0)
 
+#define MALLOC(pptr, structs, size) \
+      do{ \
+          *pptr = (structs *)malloc(size);  \
+          if((*pptr) == NULL)\
+          { printf("Error: Init failed.\n"); exit(1);}\
+      }while(0)
+
 #define FREE(s) \
       do{   \
          if(NULL != s) \
@@ -48,6 +55,9 @@ typedef struct _arp_ethernet_packet_data
 } arp_ethernet_packet_data;
 
 
-void arp_ethernet_transmission_layer_create(arp_ethernet_transmission_layer **lpp);
+void arp_ethernet_transmission_layer_create(arp_ethernet_transmission_layer **lpp, u_int8_t **ip_address);
 
-void arp_get_locator_mac(u_int8_t **mac);
+void arp_get_locator_mac(u_int8_t **mac, u_int8_t **ip_address);
+
+void arp_ethernet_packet_data_create(arp_ethernet_transmission_layer *lp, arp_ethernet_packet_data **dpp);
+
