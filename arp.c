@@ -38,13 +38,16 @@ void arp_get_locator_mac(u_int8_t **mac, u_int8_t **ip_address)
 
       for(ifadr = if_list; ifadr != NULL; ifadr = ifadr->ifa_next)
       {
-            if(ifadr->ifa_addr->sa_family == AF_LINK)
+            if(ifadr->ifa_addr->sa_family == AF_INET)
             {
                   if(strcmp(ETHNAME,ifadr->ifa_name) == 0)
                   {
                         addr = (struct sockaddr_in *)ifadr->ifa_addr;
-                        //**ip_address = addr->sin_addr.s_addr;
-                        printf("%s\n", inet_ntoa(addr->sin_addr));
+                        u_int8_t *ip = *ip_address;
+                        ip[0] = ((addr->sin_addr.s_addr << 24) >> 24);
+                        ip[1] = ((addr->sin_addr.s_addr << 16) >> 24);
+                        ip[2] = ((addr->sin_addr.s_addr << 8) >> 24);
+                        ip[3] = (addr->sin_addr.s_addr >> 24); 
                         up = (u_int8_t *)LLADDR((struct sockaddr_dl *)(ifadr->ifa_addr));
                         ARR_CPY((*mac), up, 6);
                         break;
@@ -54,7 +57,7 @@ void arp_get_locator_mac(u_int8_t **mac, u_int8_t **ip_address)
       freeifaddrs(if_list);
 }
 
-void arp_ethernet_packet_data_create(arp_ethernet_transmission_layer *lp, arp_ethernet_packet_data **dpp)
+void arp_ethernet_packet_data_create(arp_ethernet_transmission_layer *lp, arp_ethernet_packet_data **dpp, u_int8_t *src_ip, u_int8_t *dest_ip)
 {
       *dpp = (arp_ethernet_packet_data *) malloc(sizeof(arp_ethernet_packet_data));
       if((*dpp) == NULL)
@@ -69,4 +72,38 @@ void arp_ethernet_packet_data_create(arp_ethernet_transmission_layer *lp, arp_et
       (*dpp)->ar_hln = 0x06;
       (*dpp)->ar_pln = 0x04;
       (*dpp)->ar_op = 0x0001; //request | reply
+      if(src_ip == NULL)
+      {
+            printf("Error: Init failed.\n");
+            exit(1);
+      }
+      MALLOC(&((*dpp)->ar_sha), u_int8_t, sizeof(u_int8_t) * (*dpp)->ar_hln);
+      ARR_CPY((*dpp)->ar_sha, lp->sender, (*dpp)->ar_hln);
+
+      MALLOC(&((*dpp)->ar_spa), u_int8_t, sizeof(u_int8_t) * (*dpp)->ar_pln);
+      ARR_CPY((*dpp)->ar_spa, src_ip, (*dpp)->ar_pln);
+      if(dest_ip == NULL)
+      {
+            printf("Error: Init failed.\n");
+            exit(1);
+      }
+      memset(&((*dpp)->ar_tha), 0, (*dpp)->ar_hln);
+
+      MALLOC(&((*dpp)->ar_tpa), u_int8_t, sizeof(u_int8_t) * (*dpp)->ar_pln);
+      ARR_CPY((*dpp)->ar_tpa, dest_ip, (*dpp)->ar_pln);
+}
+
+void arp_run(arp_ethernet_packet_data *data)
+{
+      if(data == NULL) return;
+
+      int sockfd;
+
+      struct sockaddr_in addr;
+
+      if ((sockfd = socket(PF_INET, SOCK_RAW, 0)) < 0) {
+            perror("Error");
+            return;
+      }
+      
 }

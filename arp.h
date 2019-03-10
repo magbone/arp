@@ -4,7 +4,10 @@
 
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/un.h>
+#include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <arpa/inet.h>  
@@ -31,6 +34,8 @@
          if(NULL != s) \
             free(s); \
       }while(0)
+
+#define TARGET_MAC ({0,0,0,0,0})
 
 typedef struct _arp_ethernet_transmission_layer
 {
@@ -59,5 +64,7 @@ void arp_ethernet_transmission_layer_create(arp_ethernet_transmission_layer **lp
 
 void arp_get_locator_mac(u_int8_t **mac, u_int8_t **ip_address);
 
-void arp_ethernet_packet_data_create(arp_ethernet_transmission_layer *lp, arp_ethernet_packet_data **dpp);
+void arp_ethernet_packet_data_create(arp_ethernet_transmission_layer *lp, arp_ethernet_packet_data **dpp, u_int8_t *src_ip, u_int8_t *dest_ip);
+
+void arp_run(arp_ethernet_packet_data *data);
 
