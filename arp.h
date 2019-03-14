@@ -8,14 +8,19 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#include <netinet/if_ether.h>
 #include <net/if.h>
-#include <net/if_dl.h>
+#include <net/ethernet.h>
+#include <netpacket/packet.h>
 #include <arpa/inet.h>  
 #include <ifaddrs.h>       
 #include <errno.h>
 #include <unistd.h>
 
-#define ETHNAME "en0"
+#define ETHNAME "ens33"
+
+#define BUFFER_SIZE 1024
+
 #define ARR_CPY(des, src, len) \
       do{   \
          for(int i = 0; i < len; i++)   \
@@ -35,7 +40,7 @@
             free(s); \
       }while(0)
 
-#define TARGET_MAC ({0,0,0,0,0})
+
 
 typedef struct _arp_ethernet_transmission_layer
 {
@@ -43,6 +48,7 @@ typedef struct _arp_ethernet_transmission_layer
       u_int8_t sender[6];
       u_int16_t type;
 } arp_ethernet_transmission_layer;
+
 
 typedef struct _arp_ethernet_packet_data
 {
@@ -65,6 +71,8 @@ void arp_ethernet_transmission_layer_create(arp_ethernet_transmission_layer **lp
 void arp_get_locator_mac(u_int8_t **mac, u_int8_t **ip_address);
 
 void arp_ethernet_packet_data_create(arp_ethernet_transmission_layer *lp, arp_ethernet_packet_data **dpp, u_int8_t *src_ip, u_int8_t *dest_ip);
+
+int arp_packet_create(arp_ethernet_packet_data *lp, char **buffer);
 
 void arp_run(arp_ethernet_packet_data *data);
 
