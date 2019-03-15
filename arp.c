@@ -133,8 +133,17 @@ void arp_run(arp_ethernet_packet_data *data)
             perror("Error");
       }
       
-      printf("%d\n", recv_len);
+      arp_ethernet_packet_data *up_ptr;
+      arp_packet_unpacked(&up_ptr, recv_buffer, recv_len);
+      printf("Source: IP: %d.%d.%d.%d MAC: %02x.%02x.%02x.%02x.%02x.%02x\n", \
+            up_ptr->ar_tpa[0], up_ptr->ar_tpa[1], up_ptr->ar_tpa[2], up_ptr->ar_tpa[3], \
+            up_ptr->ar_tha[0], up_ptr->ar_tha[1], up_ptr->ar_tha[2], up_ptr->ar_tha[3], up_ptr->ar_tha[4], up_ptr->ar_tha[5]);
+
+      printf("Target: IP: %d.%d.%d.%d MAC: %02x.%02x.%02x.%02x.%02x.%02x\n", \
+            up_ptr->ar_spa[0], up_ptr->ar_spa[1], up_ptr->ar_spa[2], up_ptr->ar_spa[3], \
+            up_ptr->ar_sha[0], up_ptr->ar_sha[1], up_ptr->ar_sha[2], up_ptr->ar_sha[3], up_ptr->ar_sha[4], up_ptr->ar_sha[5]);
       close(sockfd);
+      close(sockld);
 }
 
 int arp_packet_create(arp_ethernet_packet_data *lp, char **buffer)
@@ -161,17 +170,66 @@ int arp_packet_create(arp_ethernet_packet_data *lp, char **buffer)
       buffer_arr[index++] = (lp->ar_op >> 8) & 0xff;
       buffer_arr[index++] = lp->ar_op && 0xff;
 
-      for(int i = 0; i < 6; i++)
+      for(int i = 0; i < lp->ar_hln; i++)
             buffer_arr[index++] = lp->ar_sha[i];
 
-      for(int i = 0; i < 4; i++)
+      for(int i = 0; i < lp->ar_pln; i++)
             buffer_arr[index++] = lp->ar_spa[i];
 
-      for(int i = 0; i < 6; i++) 
+      for(int i = 0; i < lp->ar_hln; i++) 
             buffer_arr[index++] = lp->ar_tha[i];
 
-      for(int i = 0; i < 4; i++)  
+      for(int i = 0; i < lp->ar_pln; i++)  
             buffer_arr[index++] = lp->ar_tpa[i];
 
       return index;
+}
+
+
+void arp_packet_unpacked(arp_ethernet_packet_data **data, char *buffer, int buffer_size)
+{
+      MALLOC(data, arp_ethernet_packet_data, sizeof(arp_ethernet_packet_data));
+
+      int index = 0;
+
+      for(int i = 0; i < sizeof((*data)->layer.destination); i++)
+            (*data)->layer.destination[i] = buffer[index++];
+
+      for(int i = 0; i < sizeof((*data)->layer.sender); i++)
+            (*data)->layer.sender[i] = buffer[index++];
+            
+      (*data)->layer.type = (buffer[index] << 8) + buffer[index + 1];
+      index += 2;
+
+      (*data)->ar_hdr = (buffer[index] << 8) + buffer[index + 1];
+      index += 2;
+
+      (*data)->ar_pro = (buffer[index] << 8) + buffer[index + 1];
+      index += 2;
+
+      (*data)->ar_hln = buffer[index++];
+      (*data)->ar_pln = buffer[index++];
+
+      (*data)->ar_op = (buffer[index] << 8) + buffer[index + 1];
+      index += 2;
+
+      MALLOC(&((*data)->ar_sha), u_int8_t, sizeof(u_int8_t) * (*data)->ar_hln);
+
+      for(int i = 0; i < (*data)->ar_hln; i++)
+            (*data)->ar_sha[i] = buffer[index++];
+
+      MALLOC(&((*data)->ar_spa), u_int8_t, sizeof(u_int8_t) * (*data)->ar_pln);
+
+      for(int i = 0; i < (*data)->ar_pln; i++)
+            (*data)->ar_spa[i] = buffer[index++];
+
+      MALLOC(&((*data)->ar_tha), u_int8_t, sizeof(u_int8_t) * (*data)->ar_hln);
+
+      for(int i = 0; i < (*data)->ar_hln; i++)
+            (*data)->ar_tha[i] = buffer[index++];
+
+      MALLOC(&((*data)->ar_tpa), u_int8_t, sizeof(u_int8_t) * (*data)->ar_pln);
+
+      for(int i = 0; i < (*data)->ar_pln; i++)
+            (*data)->ar_tpa[i] = buffer[index++];
 }

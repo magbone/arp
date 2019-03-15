@@ -76,3 +76,5 @@ int arp_packet_create(arp_ethernet_packet_data *lp, char **buffer);
 
 void arp_run(arp_ethernet_packet_data *data);
 
+void arp_packet_unpacked(arp_ethernet_packet_data **data, char *buffer, int buffer_size);
+
