@@ -1,235 +1,214 @@
 #include "arp.h"
 
-void arp_ethernet_transmission_layer_create(arp_ethernet_transmission_layer **lpp, u_int8_t **ip_address)
+
+struct ether_header *
+ether_header_new( const u_char *src_mac ) 
 {
-      *lpp = (arp_ethernet_transmission_layer *) malloc(sizeof(arp_ethernet_transmission_layer));
-      if((*lpp) == NULL)
-      {
-            printf("Error: Init failed.\n");
-            exit(1);
-      }
-      u_int8_t det[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-      ARR_CPY((*lpp)->destination, det, 6);
-      u_int8_t *local_mac;
-      arp_get_locator_mac(&local_mac, ip_address);
-      ARR_CPY((*lpp)->sender, local_mac, 6);
-      (*lpp)->type = 0x0806;
+      struct ether_header * ether_header_p = \
+            ( struct ether_header * ) malloc( sizeof( struct ether_header ) );
+
+      if ( NULL == ether_header_p ) return ( NULL );
+
+      memset( ether_header_p->ether_dhost, 255, ETHER_ADDR_LEN );
+      memcpy( ether_header_p->ether_shost, src_mac, ETHER_ADDR_LEN );
+      ether_header_p->ether_type = htons( _ARP );
+
+      return ( ether_header_p );
 }
 
-void arp_get_locator_mac(u_int8_t **mac, u_int8_t **ip_address)
+
+struct ether_arp * 
+ether_arp_new( const u_char *src_mac , const u_char *src_ip, const u_char *dst_ip )  
 {
-      MALLOC(mac, u_int8_t, sizeof(u_int8_t) * 6);
-      MALLOC(ip_address, u_int8_t, sizeof(u_int8_t) * 4);
+      struct ether_arp * ether_arp_p = ( struct ether_arp * ) \
+            malloc( sizeof( struct ether_arp ) );
+
+      if ( NULL == ether_arp_p ) return ( NULL ); 
+
+      ether_arp_p->ea_hdr.ar_hrd = htons( ARPHRD_ETHER );
+      ether_arp_p->ea_hdr.ar_pro = htons( _IPv4 );
+      ether_arp_p->ea_hdr.ar_hln = 6;
+      ether_arp_p->ea_hdr.ar_pln = 4;
+      ether_arp_p->ea_hdr.ar_op  = htons( ARPOP_REQUEST );
+      
+      memcpy( ether_arp_p->arp_sha, src_mac, ETHER_ADDR_LEN );
+      memcpy( ether_arp_p->arp_spa, src_ip, 4 );
+
+      bzero( ether_arp_p->arp_tha, ETHER_ADDR_LEN );
+      memcpy( ether_arp_p->arp_tpa, dst_ip, 4 );
+
+      return ( ether_arp_p );
+
+}
+
+
+int get_locator_address( const char *if_name, u_char *local_mac, u_char *local_ip )
+{
       struct sockaddr_in *addr;
       struct ifaddrs *ifadr, *if_list;
+    
+      if( getifaddrs( &if_list ) < 0 )
+            return ( errno );
 
-      if(getifaddrs(&if_list) < 0)
+      for ( ifadr = if_list; ifadr != NULL; ifadr = ifadr->ifa_next )
       {
-            perror("Error");
-            exit(1);
-      }
-
-      for(ifadr = if_list; ifadr != NULL; ifadr = ifadr->ifa_next)
-      {
-            if(ifadr->ifa_addr->sa_family == AF_INET)
+            if ( strcmp( if_name, ifadr->ifa_name ) == 0 )
             {
-                  if(strcmp(ETHNAME, ifadr->ifa_name) == 0)
-                  {
-                        addr = (struct sockaddr_in *) ifadr->ifa_addr;
-                        **ip_address = (addr->sin_addr.s_addr << 24) >> 24;
-                        *(*ip_address + 1) = (addr->sin_addr.s_addr << 16) >> 24;
-                        *(*ip_address + 2) = (addr->sin_addr.s_addr << 8) >> 24;
-                        *(*ip_address + 3) = (addr->sin_addr.s_addr) >> 24;
+                  if( !IS_EMPTY_MAC( local_mac ) && ifadr->ifa_addr->sa_family == AF_LINK )  
+                        memcpy( local_mac, (u_char *)LLADDR((struct sockaddr_dl *)( ifadr )->ifa_addr), ETHER_ADDR_LEN ); 
 
-                  }
-            }
-
-            if(ifadr->ifa_addr->sa_family == AF_PACKET)
-            {
-                  struct sockaddr_ll *s = (struct sockaddr_ll *)(ifadr->ifa_addr);
-                  for(int i = 0; i < 6; i++)
-                  {
-                        *(*mac + i) = s->sll_addr[i];
-                  }
+                  if ( !IS_EMPTY_IP( local_ip ) && ifadr->ifa_addr->sa_family == AF_INET )
+                        uint32_to_array( ntohl( ( ( struct sockaddr_in * ) ifadr->ifa_addr )->sin_addr.s_addr ), local_ip );
             }
       }
+      
+      return ( 0 );
 }     
 
-void arp_ethernet_packet_data_create(arp_ethernet_transmission_layer *lp, arp_ethernet_packet_data **dpp, u_int8_t *src_ip, u_int8_t *dest_ip)
+void 
+pcap_capture_callback( u_char *user, const struct pcap_pkthdr *h, const u_char *bytes )
 {
-      *dpp = (arp_ethernet_packet_data *) malloc(sizeof(arp_ethernet_packet_data));
-      if((*dpp) == NULL)
-      {
-            printf("Error: Init failed.\n");
-            exit(1);
-      }
+      if ( h->caplen <= 0 || h->caplen < FRAME_SIZE ) return;
 
-      (*dpp)->layer = *lp;
-      (*dpp)->ar_hdr = 0x0001; // Ethernet
-      (*dpp)->ar_pro = 0x0800; // IPv4
-      (*dpp)->ar_hln = 0x06;
-      (*dpp)->ar_pln = 0x04;
-      (*dpp)->ar_op = 0x0001; //request | reply
-      if(src_ip == NULL)
-      {
-            printf("Error: Init failed.\n");
-            exit(1);
-      }
-      MALLOC(&((*dpp)->ar_sha), u_int8_t, sizeof(u_int8_t) * (*dpp)->ar_hln);
-      ARR_CPY((*dpp)->ar_sha, lp->sender, (*dpp)->ar_hln);
+      struct ether_arp *rsp = ( struct ether_arp * ) ( bytes + sizeof( struct ether_header ) );
 
-      MALLOC(&((*dpp)->ar_spa), u_int8_t, sizeof(u_int8_t) * (*dpp)->ar_pln);
-      ARR_CPY((*dpp)->ar_spa, src_ip, (*dpp)->ar_pln);
-      if(dest_ip == NULL)
-      {
-            printf("Error: Init failed.\n");
-            exit(1);
-      }
-      MALLOC(&((*dpp)->ar_tha), u_int8_t, sizeof(u_int8_t) * (*dpp)->ar_hln);
-      ARR_CPY((*dpp)->ar_tha, (*dpp)->layer.destination, (*dpp)->ar_hln);
+      fprintf(stdout, "Target IP: %d.%d.%d.%d\n"
+                        "Target MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                        rsp->arp_spa[0], rsp->arp_spa[1], rsp->arp_spa[2], rsp->arp_spa[3],
+                        rsp->arp_sha[0], rsp->arp_sha[1], rsp->arp_sha[2], rsp->arp_sha[3],
+                        rsp->arp_sha[4], rsp->arp_sha[5]);
 
-      MALLOC(&((*dpp)->ar_tpa), u_int8_t, sizeof(u_int8_t) * (*dpp)->ar_pln);
-      ARR_CPY((*dpp)->ar_tpa, dest_ip, (*dpp)->ar_pln);
 }
 
-void arp_run(arp_ethernet_packet_data *data)
+int
+send_frame_and_capture( char *if_name, u_char *buffer, u_int size, char *dst_ip)
 {
-      if(data == NULL) return;
-
-      int sockfd, sockld;
-
-      if((sockfd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ARP))) < 0) {
-            perror("Error");
-            return;
-      }
+      char err_buf[PCAP_ERRBUF_SIZE] = {0}, filter_rule[40] = {0};
+      struct bpf_program fp;
       
-      if((sockld = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ARP))) < 0)
+      int ret = 0;
+      pcap_t *pcap = pcap_open_live( if_name, 65535, 1, 100, err_buf );
+
+      if ( *err_buf ) 
       {
-            perror("Error");
-            return;
-      }
-      struct sockaddr_ll addr_ll;
-      memset(&addr_ll, 0, sizeof(addr_ll));
+            fprintf( stderr, "%s\n", err_buf);
+            return ( -1 );
+      } 
 
-      addr_ll.sll_family = AF_PACKET;
-      addr_ll.sll_protocol = data->layer.type;
-      addr_ll.sll_ifindex = if_nametoindex(ETHNAME);
-      memcpy(addr_ll.sll_addr, data->layer.destination, 6);
-      
-      char *send_buffer;
-      int send_len = arp_packet_create(data, &send_buffer);
+      sprintf( filter_rule, "arp src host %s", dst_ip );
 
-
-      char recv_buffer[BUFFER_SIZE];
-      memset(recv_buffer, 0,  BUFFER_SIZE);
-      int recv_len;
-      if(sendto(sockfd, send_buffer, send_len, 0, (struct sockaddr*) &addr_ll, sizeof(addr_ll)) < 0)
+      if ( ( ret = pcap_compile( pcap, &fp, filter_rule, 1, 0 ) ) == PCAP_ERROR )
       {
-            perror("Error");
+            fprintf( stderr, "%s\n", pcap_geterr( pcap ) );
+            goto close;
       }
 
-      if((recv_len = recv(sockld, recv_buffer, BUFFER_SIZE, 0)) < 0)
+      if ( ( ret = pcap_setfilter( pcap, &fp ) ) == PCAP_ERROR ) 
       {
-            perror("Error");
+            fprintf( stderr, "%s\n", pcap_geterr( pcap ) );
+            goto close;
       }
-      
-      arp_ethernet_packet_data *up_ptr;
-      arp_packet_unpacked(&up_ptr, recv_buffer, recv_len);
-      printf("Source: IP: %d.%d.%d.%d MAC: %02x.%02x.%02x.%02x.%02x.%02x\n", \
-            up_ptr->ar_tpa[0], up_ptr->ar_tpa[1], up_ptr->ar_tpa[2], up_ptr->ar_tpa[3], \
-            up_ptr->ar_tha[0], up_ptr->ar_tha[1], up_ptr->ar_tha[2], up_ptr->ar_tha[3], up_ptr->ar_tha[4], up_ptr->ar_tha[5]);
 
-      printf("Target: IP: %d.%d.%d.%d MAC: %02x.%02x.%02x.%02x.%02x.%02x\n", \
-            up_ptr->ar_spa[0], up_ptr->ar_spa[1], up_ptr->ar_spa[2], up_ptr->ar_spa[3], \
-            up_ptr->ar_sha[0], up_ptr->ar_sha[1], up_ptr->ar_sha[2], up_ptr->ar_sha[3], up_ptr->ar_sha[4], up_ptr->ar_sha[5]);
-      close(sockfd);
-      close(sockld);
+      // Inject the filled packet into the target interface by pcap
+      if ( ( ret = pcap_inject( pcap, buffer, size ) ) == PCAP_ERROR ) 
+      {
+            fprintf( stderr, "%s\n", pcap_geterr( pcap ) );
+            goto close;
+      }
+
+      // Set timeout value of 1 second before doing a live capture
+      if ( ( ret = pcap_set_timeout( pcap, 1000 ) ) == PCAP_ERROR )
+      {
+            fprintf( stderr, "%s\n", pcap_geterr( pcap ) );
+            goto close;
+      }
+
+      if ( ( ret = pcap_dispatch( pcap, -1, pcap_capture_callback, NULL ) ) <= 0 ) 
+      {
+            if (ret) fprintf( stderr, "%s\n", pcap_geterr( pcap ) );
+            else fprintf( stdout, "Received timeout\n" );
+            goto close;
+      }
+
+      close:
+            pcap_close( pcap );
+            return ( ret );
 }
 
-int arp_packet_create(arp_ethernet_packet_data *lp, char **buffer)
+void 
+uint32_to_array( uint32_t u, u_char * a)
 {
-      int app_len = 2 * (sizeof(lp->ar_hdr) + sizeof(lp->ar_hln) + lp->ar_hln + lp->ar_pln + sizeof(lp->layer.sender)) + sizeof(lp->ar_op) + sizeof(lp->layer.type);
-      MALLOC(buffer, char, app_len * sizeof(char));
-      int index = 0;
-      char *buffer_arr = *buffer;
-      
-      for(int i = 0; i < sizeof(lp->layer.destination); i++)
-            buffer_arr[index++] = lp->layer.destination[i];
-
-      for(int i = 0; i < sizeof(lp->layer.sender); i++)
-            buffer_arr[index++] = lp->layer.sender[i];
-
-      buffer_arr[index++] = (lp->layer.type >> 8) &0xff;
-      buffer_arr[index++] = lp->layer.type & 0xff;
-      buffer_arr[index++] = (lp->ar_hdr >> 8) & 0xff;
-      buffer_arr[index++] = lp->ar_hdr & 0xff;
-      buffer_arr[index++] = (lp->ar_pro >> 8) & 0xff;
-      buffer_arr[index++] = lp->ar_pro & 0xff;
-      buffer_arr[index++] = lp->ar_hln;
-      buffer_arr[index++] = lp->ar_pln;
-      buffer_arr[index++] = (lp->ar_op >> 8) & 0xff;
-      buffer_arr[index++] = lp->ar_op && 0xff;
-
-      for(int i = 0; i < lp->ar_hln; i++)
-            buffer_arr[index++] = lp->ar_sha[i];
-
-      for(int i = 0; i < lp->ar_pln; i++)
-            buffer_arr[index++] = lp->ar_spa[i];
-
-      for(int i = 0; i < lp->ar_hln; i++) 
-            buffer_arr[index++] = lp->ar_tha[i];
-
-      for(int i = 0; i < lp->ar_pln; i++)  
-            buffer_arr[index++] = lp->ar_tpa[i];
-
-      return index;
+      *a = ( u >> 24 ) & 0xff;
+      *( a + 1 ) = ( u >> 16 ) & 0xff;
+      *( a + 2 ) = ( u >> 8 ) & 0xff;
+      *( a + 3 ) = ( u ) & 0xff;
 }
 
-
-void arp_packet_unpacked(arp_ethernet_packet_data **data, char *buffer, int buffer_size)
+int 
+parse_ip_to_array( const char *ip, u_char *ipp)
 {
-      MALLOC(data, arp_ethernet_packet_data, sizeof(arp_ethernet_packet_data));
+      if (!ip || !*ip ) return ( -1 );
 
-      int index = 0;
+      uint32_t addr = inet_addr(ip);
+      uint32_to_array( ntohl(addr), ipp );
 
-      for(int i = 0; i < sizeof((*data)->layer.destination); i++)
-            (*data)->layer.destination[i] = buffer[index++];
+      if (addr < 0 ) return ( -1 );
+      
+      return ( 0 );
+}
+/**
+ * @param ins_name Constant string pointer, Network card interface 
+ * @param dst_ip Constant string pointer, Dstination host's IPv4 address
+ * @return if successfully it returns Ok(value 0),
+ * otherwise, returns error code(value >= 1)
+*/
 
-      for(int i = 0; i < sizeof((*data)->layer.sender); i++)
-            (*data)->layer.sender[i] = buffer[index++];
-            
-      (*data)->layer.type = (buffer[index] << 8) + buffer[index + 1];
-      index += 2;
+int arp_run
+( const char *if_name, const char *dst_ip )
+{
+      if ( if_name == NULL || dst_ip == NULL ) 
+            return ( 1 );
+      
+      if ( !( *if_name ) || !( *dst_ip ))
+            return ( 1 );
 
-      (*data)->ar_hdr = (buffer[index] << 8) + buffer[index + 1];
-      index += 2;
+      u_char local_mac[ETHER_ADDR_LEN], local_ip[4], dst_ipp[4], buffer[BUFSIZ];
+      int ret = 0;
 
-      (*data)->ar_pro = (buffer[index] << 8) + buffer[index + 1];
-      index += 2;
+      if ( parse_ip_to_array( dst_ip, dst_ipp ) ) return ( 1 );
 
-      (*data)->ar_hln = buffer[index++];
-      (*data)->ar_pln = buffer[index++];
+      if ( get_locator_address( if_name, local_mac, local_ip ) )
+            return ( 1 );
 
-      (*data)->ar_op = (buffer[index] << 8) + buffer[index + 1];
-      index += 2;
+      struct ether_header *ether_header_p = ether_header_new( local_mac );
+      struct ether_arp *ether_arp_p = ether_arp_new( local_mac, local_ip, dst_ipp );
 
-      MALLOC(&((*data)->ar_sha), u_int8_t, sizeof(u_int8_t) * (*data)->ar_hln);
+      memcpy( buffer, ether_header_p, sizeof( struct ether_header ) );
+      memcpy( buffer + sizeof( struct ether_header ), ether_arp_p, sizeof( struct ether_arp ) );
 
-      for(int i = 0; i < (*data)->ar_hln; i++)
-            (*data)->ar_sha[i] = buffer[index++];
+      #ifdef DEBUG
+      printf( "Ethernet frame(sender): \n" );
+      for ( int i = 0; i < FRAME_SIZE; i++)
+            printf("%02x ", buffer[i] );
+      
+      printf( "\n" );
+      #endif // DEBUG
 
-      MALLOC(&((*data)->ar_spa), u_int8_t, sizeof(u_int8_t) * (*data)->ar_pln);
+      // Release allocted memeory after copying data to a buffer.
+      free( ether_header_p );
+      free( ether_arp_p );
 
-      for(int i = 0; i < (*data)->ar_pln; i++)
-            (*data)->ar_spa[i] = buffer[index++];
+      if ( send_frame_and_capture( if_name, buffer, FRAME_SIZE, dst_ip ) )
+            return ( 1 );
+      return ( 0 );
+}
 
-      MALLOC(&((*data)->ar_tha), u_int8_t, sizeof(u_int8_t) * (*data)->ar_hln);
-
-      for(int i = 0; i < (*data)->ar_hln; i++)
-            (*data)->ar_tha[i] = buffer[index++];
-
-      MALLOC(&((*data)->ar_tpa), u_int8_t, sizeof(u_int8_t) * (*data)->ar_pln);
-
-      for(int i = 0; i < (*data)->ar_pln; i++)
-            (*data)->ar_tpa[i] = buffer[index++];
+int main(int argc, char** argv)
+{
+      if ( argc < 3 ) 
+      {
+            printf("Usage: arp [interface] [target ip]\n");
+            return ( 0 );
+      }
+      return ( arp_run( argv[1], argv[2] ) );
 }

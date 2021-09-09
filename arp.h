@@ -9,72 +9,49 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#include <arpa/inet.h>
 #include <net/if.h>
 #include <net/ethernet.h>
-#include <netpacket/packet.h>
+#include <net/if_dl.h>
 #include <arpa/inet.h>  
 #include <ifaddrs.h>       
 #include <errno.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <pcap/pcap.h>
 
-#define ETHNAME "ens33"
+#ifndef _ARP_H_
+#define _ARP_H_
 
-#define BUFFER_SIZE 1024
+#ifndef _IPv4
+#define _IPv4 0x0800
+#endif // !_IPv4
 
-#define ARR_CPY(des, src, len) \
-      do{   \
-         for(int i = 0; i < len; i++)   \
-            des[i] = src[i];\
-      }while(0)
+#ifndef _ARP
+#define _ARP 0x0806
+#endif // !_ARP
 
-#define MALLOC(pptr, structs, size) \
-      do{ \
-          *pptr = (structs *)malloc(size);  \
-          if((*pptr) == NULL)\
-          { printf("Error: Init failed.\n"); exit(1);}\
-      }while(0)
+#define IS_EMPTY_MAC(mac) (mac[0] == mac[1] == mac[2] == mac[3] == mac[4] == mac[5] == 0)
+#define IS_EMPTY_IP(ip) (ip[0] == ip[1] == ip[2] == ip[3] == 0)
 
-#define FREE(s) \
-      do{   \
-         if(NULL != s) \
-            free(s); \
-      }while(0)
+#define FRAME_SIZE ( sizeof( struct ether_header ) + sizeof( struct ether_arp ) )
+// static const char *err_msg [] = {
+//       NULL,
+//       "Invalid name value",
+//       "Null pointer",
+//       NULL
+// };
 
+void arp_pcap_handler ( u_char *user, const struct pcap_pkthdr *h, const u_char *bytes );
 
-
-typedef struct _arp_ethernet_transmission_layer
-{
-      u_int8_t destination[6];
-      u_int8_t sender[6];
-      u_int16_t type;
-} arp_ethernet_transmission_layer;
-
-
-typedef struct _arp_ethernet_packet_data
-{
-      arp_ethernet_transmission_layer layer;
-      u_int16_t ar_hdr;
-      u_int16_t ar_pro;
-      u_int8_t ar_hln;
-      u_int8_t ar_pln;
-      u_int16_t ar_op;
-      u_int8_t *ar_sha;
-      u_int8_t *ar_spa;
-      u_int8_t *ar_tha;
-      u_int8_t *ar_tpa;
-
-} arp_ethernet_packet_data;
+struct ether_header *ether_header_new( const u_char *src_mac );
+struct ether_arp *ether_arp_new( const u_char *src_mac, const u_char *src_ip, const u_char * dst_ip );
+int get_locator_address( const char *if_name, u_char *local_mac, u_char *local_ip );
+int send_frame_and_capture( char *if_name, u_char *buffer, u_int size, char *dst_ip );
+void pcap_capture_callback( u_char *user, const struct pcap_pkthdr *h, const u_char *bytes );
+int parse_ip_to_array( const char *ip, u_char *ipp );
+void uint32_to_array( uint32_t u, u_char * a);
+int arp_run( const char *if_name, const char *dst_ip );
 
 
-void arp_ethernet_transmission_layer_create(arp_ethernet_transmission_layer **lpp, u_int8_t **ip_address);
-
-void arp_get_locator_mac(u_int8_t **mac, u_int8_t **ip_address);
-
-void arp_ethernet_packet_data_create(arp_ethernet_transmission_layer *lp, arp_ethernet_packet_data **dpp, u_int8_t *src_ip, u_int8_t *dest_ip);
-
-int arp_packet_create(arp_ethernet_packet_data *lp, char **buffer);
-
-void arp_run(arp_ethernet_packet_data *data);
-
-void arp_packet_unpacked(arp_ethernet_packet_data **data, char *buffer, int buffer_size);
-
+#endif // !_ARP_H_
