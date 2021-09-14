@@ -42,7 +42,7 @@ ether_arp_new( const u_char *src_mac , const u_char *src_ip, const u_char *dst_i
 }
 
 
-int get_locator_address( const char *if_name, u_char *local_mac, u_char *local_ip )
+int get_local_address( const char *if_name, u_char *local_mac, u_char *local_ip )
 {
       struct sockaddr_in *addr;
       struct ifaddrs *ifadr, *if_list;
@@ -177,7 +177,7 @@ int arp_run
 
       if ( parse_ip_to_array( dst_ip, dst_ipp ) ) return ( 1 );
 
-      if ( get_locator_address( if_name, local_mac, local_ip ) )
+      if ( get_local_address( if_name, local_mac, local_ip ) )
             return ( 1 );
 
       struct ether_header *ether_header_p = ether_header_new( local_mac );
